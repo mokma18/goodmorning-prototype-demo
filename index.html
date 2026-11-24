@@ -1383,10 +1383,37 @@ body:has(.post.is-editing) .diary-pages { display:none; }
 .solid-diary[data-diary-cover="closed"] .binder-clip-button { visibility: hidden; }
 .solid-diary :is(.binder-snap-button, .binder-clip-button):focus-visible { outline-offset: -1px; }
 @media (max-width: 719px) {
+  .diary-demo:not(.reading-mode) .page:not(:has(.post.is-editing)) {
+    --diary-header: calc(56px + env(safe-area-inset-top));
+    --diary-menu: calc(71px + env(safe-area-inset-bottom));
+    --diary-center-inset: max(var(--diary-header), var(--diary-menu));
+    --diary-sheet-width: max(150px, calc((100dvh - 2 * (var(--diary-center-inset) + 54px)) * .75));
+    padding-block: calc(12px + env(safe-area-inset-top)) var(--diary-menu);
+  }
+  .diary-demo:not(.reading-mode) #post-view:not(:has(.post.is-editing)) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto minmax(54px, 1fr);
+    min-block-size: calc(100dvh - 2 * var(--diary-center-inset));
+    margin-block: calc(var(--diary-center-inset) - var(--diary-header))
+      calc(var(--diary-center-inset) - var(--diary-menu));
+  }
   .diary-demo:not(.reading-mode) .book-stage:has(> .solid-diary:not(.is-editing)) {
     --binder-pocket-room: clamp(18px, calc(18px + (100vw - 320px) * .143), 28px);
+    --binder-tab-room: var(--bookmark-gutter, 48px);
+    grid-row: 2;
+    justify-self: center;
+    max-inline-size: calc(var(--diary-sheet-width) + var(--binder-pocket-room) + var(--binder-tab-room));
     padding-inline-start: var(--binder-pocket-room);
-    transform-origin: calc((100% + var(--binder-pocket-room) - var(--bookmark-gutter, 0px)) / 2) center;
+    translate: calc((var(--binder-tab-room) - var(--binder-pocket-room)) / 2) 0;
+    transform-origin: calc((100% + var(--binder-pocket-room) - var(--binder-tab-room)) / 2) center;
+  }
+  .diary-demo:not(.reading-mode) #diary-pages { grid-row: 3; align-self: start; }
+  .diary-demo:not(.reading-mode) #post-view > .distance-status {
+    grid-row: 1;
+    align-self: end;
+    justify-self: center;
+    margin: 0 0 10px;
   }
 }
 @media (min-width: 480px) {
