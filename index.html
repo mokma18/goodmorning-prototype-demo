@@ -164,10 +164,11 @@ body:has(.post.is-editing) :is(#enable-tilt, #reading-mode) { display: none; }
 .diary-demo:not(.reading-mode) .book-stage:has(> .diary-bookmarks:not([hidden])):not(:has(> .post.is-editing)) {
   --bookmark-gutter: 46px;
   padding-inline-end: var(--bookmark-gutter);
-  transform: perspective(850px) scale(var(--book-zoom, 1)) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transform: translate(var(--book-pan-x, 0px), var(--book-pan-y, 0px))
+    perspective(850px) scale(var(--book-zoom, 1)) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
   transform-origin: calc((100% - var(--bookmark-gutter)) / 2) center;
   transform-style: preserve-3d;
-  transition: transform 75ms ease-out;
+  transition: transform var(--book-motion-time, 75ms) ease-out;
 }
 .diary-demo:not(.reading-mode) .book-stage:has(> .diary-bookmarks:not([hidden])) > .post:not(.is-editing) {
   transform: none; transition: none;
@@ -228,8 +229,9 @@ body:has(.post.is-editing) :is(#enable-tilt, #reading-mode) { display: none; }
 .diary-demo .page { width: min(100%, 568px); }
 .diary-demo .post {
   aspect-ratio: 3 / 4; border: 1px solid #6d809331; border-radius: 7px 11px 11px 7px;
-  transform: perspective(850px) scale(var(--book-zoom, 1)) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
-  transition: transform 75ms ease-out;
+  transform: translate(var(--book-pan-x, 0px), var(--book-pan-y, 0px))
+    perspective(850px) scale(var(--book-zoom, 1)) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transition: transform var(--book-motion-time, 75ms) ease-out;
   box-shadow: 0 2px 0 #9aafbd40, 0 4px 0 #b3c3cd40, 0 12px 24px -15px #314b5a66;
 }
 .diary-demo .post.is-editing { transform: none; transition: none; }
@@ -1235,6 +1237,9 @@ body:has(.post.is-editing) .diary-pages { display:none; }
   background: transparent;
   box-shadow: none;
 }
+.post.solid-diary:not(.is-editing):not(.gyro-active) { touch-action: none; }
+.post.solid-diary.gyro-active { touch-action: pan-y; }
+.book-stage:has(> .solid-diary.touch-turning) { --book-motion-time: 0ms; }
 .diary-demo:not(.reading-mode):has(.post.solid-diary) .topbar {
   position: relative;
   z-index: 7;
@@ -2021,6 +2026,7 @@ body:has(.post.is-editing) .diary-pages { display:none; }
     const sampleId = asset.sourceId ?? asset.id;
     const sticker = asset.finish === 'sticker';
     const solidMagnet = asset.magnet && !sticker && !asset.file;
+    const diaryResolution = asset.diaryResolution;
     let disposed = false;
     let renderer, scene, camera, model, sparkRenderer, resizeObserver;
     let magnetLight;
@@ -2032,6 +2038,13 @@ body:has(.post.is-editing) .diary-pages { display:none; }
     let lightX = 0, lightY = 0;
     let firstFrame, firstFrameDeadline = 0, lastProbe = -Infinity;
     let footprint = null, lastFootprintProbe = -Infinity;
+    let displayScale = 1, cssWidth = 0, cssHeight = 0;
+
+    function diaryPixelRatio() {
+      // CSS zoom and asset alignment scale the visible canvas without resizing its backing store.
+      const screenRatio = (window.devicePixelRatio || 1) * displayScale;
+      return Math.min(4, 576 / Math.max(cssWidth, cssHeight), Math.ceil(screenRatio * 2) / 2);
+    }
 
     function confirmMagnetFrame(time) {
       if (!solidMagnet || !firstFrame || time - lastProbe < 100) return;
@@ -2062,6 +2075,10 @@ body:has(.post.is-editing) .diary-pages { display:none; }
         magnetLight.position.set(-2 + lightX * .19, 3 + lightY * .20, 4);
         scene.environmentRotation?.set(lightY * .035, lightX * .045, 0);
       }
+      if (diaryResolution) {
+        const pixelRatio = diaryPixelRatio();
+        if (pixelRatio !== renderer.getPixelRatio()) renderer.setPixelRatio(pixelRatio);
+      }
       renderer.render(scene, camera);
       if (asset.captureFootprint && !footprint && time - lastFootprintProbe >= 120) {
         lastFootprintProbe = time;
@@ -2082,6 +2099,8 @@ body:has(.post.is-editing) .diary-pages { display:none; }
       if (!renderer || !model || disposed) return;
       const { clientWidth: width, clientHeight: height } = canvas;
       if (width < 1 || height < 1) return;
+      cssWidth = width;
+      cssHeight = height;
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.fov = originalFov;
@@ -2244,6 +2263,12 @@ body:has(.post.is-editing) .diary-pages { display:none; }
     void init();
     return {
       getFootprint() { return footprint; },
+      setDisplayScale(scale) {
+        if (disposed || !diaryResolution || !Number.isFinite(scale) || scale <= displayScale) return;
+        // Keep the largest backing store for this view so sensor jitter cannot resize it repeatedly.
+        displayScale = scale;
+        if (renderer && diaryPixelRatio() !== renderer.getPixelRatio()) requestRender(solidMagnet ? 120 : 0);
+      },
       setLightAngle(x, y) {
         if (disposed || !sticker) return;
         lightX = x;
@@ -2763,7 +2788,8 @@ if (mountedBoard) {
   let tiltOrigin = null;
   let tiltX = 0, tiltY = 0;
   let distance = { zoom: 1, x: 0, y: 0 };
-  let manual = { zoom: 1, x: 0, y: 0 };
+  const neutralView = { zoom: 1, x: 0, y: 0, panX: 0, panY: 0 };
+  let manual = { ...neutralView };
   let drag = null;
   let suppressDragClick = false;
   let frame = null;
@@ -2787,10 +2813,15 @@ if (mountedBoard) {
       stage.setProperty('--tilt-x', `${pitch}deg`);
       stage.setProperty('--tilt-y', `${yaw}deg`);
       stage.setProperty('--book-zoom', zoom);
+      const panRoom = Math.max(0, zoom - 1) / 2;
+      const panX = manual.panX ? elements.post.clientWidth * panRoom : 0;
+      const panY = manual.panY ? elements.post.clientHeight * panRoom : 0;
+      stage.setProperty('--book-pan-x', `${clamp(manual.panX, -panX, panX)}px`);
+      stage.setProperty('--book-pan-y', `${clamp(manual.panY, -panY, panY)}px`);
     }
     const moving = (!demo || diaryOpen) && Math.max(Math.abs(boardX), Math.abs(boardY)) > 1.4;
     for (const view of views.values()) {
-      const active = moving || view.cabinetRabbit;
+      const active = moving || view.cabinetRabbit || (demo && diaryOpen && view.appearanceFitted);
       if (active && !view.model) mountBoardModel(view);
       if (!view.ready && !view.cabinetRabbit) continue;
       if (view.previewFirst) {
@@ -2805,6 +2836,7 @@ if (mountedBoard) {
           continue;
         }
       }
+      if (demo && diaryOpen) view.model.setDisplayScale?.(Number(zoom) * (view.liveScale ?? 1));
       const x = view.solidMagnet ? (home ? yaw : clamp(yaw * .6, -24, 24)) : boardX;
       const y = view.solidMagnet ? (home ? pitch : clamp(pitch * .6, -24, 24)) : boardY;
       if (Math.abs(x - (view.boardAngle?.[0] ?? Infinity)) + Math.abs(y - (view.boardAngle?.[1] ?? Infinity)) < .55 && (x !== 0 || y !== 0)) continue;
@@ -2848,6 +2880,71 @@ if (mountedBoard) {
 
   const finePointer = matchMedia('(any-pointer: fine)');
   const board = elements.post;
+  const diaryTouches = new Map();
+  let touchStart = null;
+  let touchMoved = false;
+  let hadTwoTouches = false;
+
+  function resetDiaryTouches() {
+    diaryTouches.clear();
+    touchStart = null;
+    hadTwoTouches = touchMoved = false;
+    board.classList.remove('touch-turning');
+  }
+
+  if (demo) {
+    const touchPoint = event => ({ x: event.clientX, y: event.clientY });
+    board.addEventListener('pointerdown', event => {
+      if (event.pointerType !== 'touch' || draft || enabled || drag || diaryTouches.size === 2) return;
+      if (!diaryTouches.size) suppressDragClick = false;
+      diaryTouches.set(event.pointerId, touchPoint(event));
+      touchStart = { pose: placementPose(diaryTouches), origin: { ...manual } };
+      if (diaryTouches.size === 1) return;
+      const bounds = board.getBoundingClientRect();
+      touchStart.center = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+      hadTwoTouches = suppressDragClick = true;
+      for (const id of diaryTouches.keys()) board.setPointerCapture(id);
+      board.classList.add('touch-turning');
+    });
+
+    board.addEventListener('pointermove', event => {
+      if (draft || enabled || !diaryTouches.has(event.pointerId) || !touchStart) return;
+      diaryTouches.set(event.pointerId, touchPoint(event));
+      const { pose, origin, center } = touchStart;
+      const next = placementPose(diaryTouches);
+      const dx = next.x - pose.x;
+      const dy = next.y - pose.y;
+      if (diaryTouches.size === 2) {
+        manual.zoom = clamp(origin.zoom * next.distance / Math.max(1, pose.distance), .76, 1.42);
+        const scaleShift = 1 - manual.zoom / origin.zoom;
+        const room = Math.max(0, manual.zoom - 1) / 2;
+        const panX = board.clientWidth * room;
+        const panY = board.clientHeight * room;
+        manual.panX = clamp(origin.panX + dx + (pose.x - center.x) * scaleShift, -panX, panX);
+        manual.panY = clamp(origin.panY + dy + (pose.y - center.y) * scaleShift, -panY, panY);
+      } else {
+        if (hadTwoTouches || (!touchMoved && Math.hypot(dx, dy) < 6)) return;
+        if (!touchMoved) {
+          touchMoved = suppressDragClick = true;
+          board.setPointerCapture(event.pointerId);
+          board.classList.add('touch-turning');
+        }
+        manual.x = clamp(origin.x + dx * .34, -35, 35);
+        manual.y = clamp(origin.y + dy * .34, -32, 32);
+      }
+      scheduleBoard();
+    });
+
+    const endDiaryTouch = event => {
+      if (event.type === 'lostpointercapture' && event.target !== board) return;
+      if (!diaryTouches.delete(event.pointerId)) return;
+      touchStart = null;
+      if (!diaryTouches.size) resetDiaryTouches();
+    };
+    board.addEventListener('pointerup', endDiaryTouch);
+    board.addEventListener('pointercancel', endDiaryTouch);
+    board.addEventListener('lostpointercapture', endDiaryTouch);
+  }
   if (finePointer.matches) board.tabIndex = 0;
   if (demo) board.addEventListener('wheel', event => {
     if (draft || !finePointer.matches || !event.deltaY) return;
@@ -2856,6 +2953,7 @@ if (mountedBoard) {
     if (zoom === manual.zoom) return;
     event.preventDefault();
     manual.zoom = zoom;
+    if (zoom <= 1) manual.panX = manual.panY = 0;
     scheduleBoard();
   }, { passive: false });
   board.addEventListener('contextmenu', event => {
@@ -2871,7 +2969,7 @@ if (mountedBoard) {
   board.addEventListener('pointerdown', event => {
     const rightMouse = event.pointerType === 'mouse' && event.button === 2;
     const homePointer = home && event.isPrimary && event.button === 0;
-    if (draft || drag || board.classList.contains('safe-opening') || (!rightMouse && !homePointer)) return;
+    if (draft || drag || diaryTouches.size || board.classList.contains('safe-opening') || (!rightMouse && !homePointer)) return;
     suppressDragClick = false;
     drag = { id: event.pointerId, sx: event.clientX, sy: event.clientY, x: manual.x, y: manual.y, started: false };
     if (rightMouse) {
@@ -2901,7 +2999,7 @@ if (mountedBoard) {
   board.addEventListener('pointerup', endRotation);
   board.addEventListener('pointercancel', endRotation);
   board.addEventListener('lostpointercapture', endRotation);
-  if (home) board.addEventListener('click', event => {
+  board.addEventListener('click', event => {
     if (!suppressDragClick || event.detail === 0) return;
     suppressDragClick = false;
     event.preventDefault();
@@ -2909,11 +3007,13 @@ if (mountedBoard) {
   }, true);
   board.addEventListener('keydown', event => {
     if (draft || event.key !== 'Escape') return;
-    manual = { zoom: 1, x: 0, y: 0 };
+    resetDiaryTouches();
+    manual = { ...neutralView };
     scheduleBoard();
   });
 
   function updateTiltButton(on) {
+    board.classList.toggle('gyro-active', on);
     tiltButton.setAttribute('aria-pressed', String(on));
     const label = on ? '자이로 및 얼굴 거리 확대 끄기' : '자이로 및 얼굴 거리 확대 켜기';
     tiltButton.setAttribute('aria-label', label);
@@ -2921,6 +3021,8 @@ if (mountedBoard) {
   }
 
   stopBoardEffects = () => {
+    resetDiaryTouches();
+    suppressDragClick = false;
     if (!enabled) return;
     enabled = false;
     activation++;
@@ -2951,9 +3053,13 @@ if (mountedBoard) {
     });
     document.getElementById('gyro-apply').addEventListener('click', async () => {
       setup.close();
+      resetDiaryTouches();
+      suppressDragClick = false;
+      manual = { ...neutralView };
       enabled = true;
       const token = ++activation;
       updateTiltButton(true);
+      scheduleBoard();
       showDistanceStatus('전면 카메라 준비 중…', true);
       try {
         const access = typeof orientation?.requestPermission === 'function' ? await orientation.requestPermission() : 'granted';
@@ -3122,6 +3228,7 @@ function fitBoardAsset(view) {
   const x = (image.x - live.x * scale) * 100;
   const y = (image.y - live.y * scale) * 100;
   view.canvas.style.transform = `translate(${x}%, ${y}%) scale(${scale})`;
+  view.liveScale = scale;
   view.appearanceFitted = true;
   return true;
 }
@@ -3372,7 +3479,11 @@ function wirePointer(view) {
 
 function mountBoardModel(view) {
   const { item, node, canvas, status, previewFirst } = view;
-  const options = previewFirst && !view.cabinetRabbit ? { ...item, captureFootprint: true } : item;
+  const options = {
+    ...item,
+    captureFootprint: previewFirst && !view.cabinetRabbit,
+    diaryResolution: demo,
+  };
   view.model = window.mountGoodmorningModel(canvas, options, (state, detail) => {
     if (state === 'footprint') {
       scheduleBoard();
