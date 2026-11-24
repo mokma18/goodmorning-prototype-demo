@@ -2955,25 +2955,30 @@ if (mountedBoard) {
     });
   }
 }
-const homeLayoutVersion = 2;
-const homePreviewKey = 'goodmorning-safe-preview-v2';
+const homeLayoutVersion = 3;
+const homePreviewKey = `goodmorning-safe-preview-v${homeLayoutVersion}`;
+const homeRabbitMagnet = displayAssets[2];
+const homeRabbitSticker = stickerAssets[2];
 const homeStarterIds = [...displayAssets, ...stickerAssets].map(asset => asset.id);
 
-function migrateHomeStarter(items, version) {
-  if (version === homeLayoutVersion || items.length !== homeStarterIds.length) return items;
-  const legacyStarter = homeStarterIds.every(id => items.some(item => item.id === id && !item.file));
-  if (!legacyStarter) return items;
-  const sticker = items.find(item => item.id === stickerAssets[2].id);
-  return [{ ...sticker, name: '우사기' }];
+function migrateHomeStarter(items, version = 1) {
+  if (version >= homeLayoutVersion) return items;
+  const sticker = items.find(item => item.id === homeRabbitSticker.id && !item.file);
+  if (!sticker) return items;
+  const legacyStarter = version === 1 && items.length === homeStarterIds.length &&
+    homeStarterIds.every(id => items.some(item => item.id === id && !item.file));
+  if (items.length !== 1 && !legacyStarter) return items;
+  const { x, y, size, rotation } = sticker;
+  return [{ ...homeRabbitMagnet, x, y, size, rotation }];
 }
 
 function readHomePreview() {
   try {
-    const latest = localStorage.getItem(homePreviewKey);
-    const cache = JSON.parse(latest ?? localStorage.getItem('goodmorning-safe-preview-v1'));
-    if (Array.isArray(cache)) {
+    for (let version = homeLayoutVersion; version > 0; version--) {
+      const cache = JSON.parse(localStorage.getItem(`goodmorning-safe-preview-v${version}`));
+      if (!Array.isArray(cache)) continue;
       const items = cache.filter(item => item && Number.isFinite(item.x) && Number.isFinite(item.y) && Number.isFinite(item.size));
-      return migrateHomeStarter(items, latest === null ? 1 : homeLayoutVersion);
+      return migrateHomeStarter(items, version);
     }
   } catch {}
   return null;
@@ -2985,7 +2990,7 @@ let published = newDiaryPage ? [] : demo
     { ...displayAssets[storyIndex], x: numberedDiary ? 82 : 74, y: numberedDiary ? 39 : 60, size: numberedDiary ? 26 : 37 },
     { ...stickerAssets[storyIndex], x: numberedDiary ? 22 : 21, y: numberedDiary ? 32 : 29, size: numberedDiary ? 17 : 19 },
   ]
-  : home ? homePreview ?? [{ ...stickerAssets[2], name: '우사기', x: 66, y: 35, size: 42 }]
+  : home ? homePreview ?? [{ ...homeRabbitMagnet, x: 66, y: 35, size: 42 }]
     : [{ ...assets[0], x: 50, y: 50, size: 86, url: '' }];
 let draft = null;
 let publishedPhoto = null;
