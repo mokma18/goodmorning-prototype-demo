@@ -1045,6 +1045,10 @@ body:has(.post.is-editing) .diary-pages { display:none; }
 
 .post.solid-safe {
   --solid-depth: 74px;
+  --safe-frame-inset: calc(var(--solid-depth) * 7 / 33);
+  --safe-door-inset: calc(var(--safe-frame-inset) + 1px);
+  --safe-door-thickness: clamp(4px, calc(var(--solid-depth) * .09), 9px);
+  --safe-cavity-depth: calc(var(--solid-depth) * .93);
   left: 0;
   background: transparent;
   border: 0;
@@ -1069,21 +1073,89 @@ body:has(.post.is-editing) .diary-pages { display:none; }
 .solid-safe :is(.face-bottom, .face-back) {
   background: color-mix(in srgb, var(--safe-edge) 83%, #323845);
 }
-.solid-safe .safe-front { box-shadow: inset 0 3px #fff5, inset -2px -3px #34243b16, 0 7px 13px -9px #2f3a4e70; }
-.solid-safe :is(.safe-front, .safe-cavity, .safe-door-back) { pointer-events: none; }
+.solid-safe :is(.safe-frame, .safe-front, .safe-cavity, .safe-door-back, .safe-door-edge) { pointer-events: none; }
 .solid-board #layers { transform: translateZ(2px); }
-.solid-safe .safe-door { transform: rotateY(0deg) translateZ(1px); }
-.solid-safe.safe-opening .safe-door { transform: rotateY(101deg) translateZ(1px); }
+
+/* Cabinet rails are fixed; only the inset slab pivots about its right edge. */
+.solid-safe .safe-frame { position: absolute; inset: 0; border-radius: inherit; }
+.solid-safe .safe-frame::before,
+.solid-safe .safe-frame::after { content: ""; position: absolute; }
+.solid-safe .safe-frame::before {
+  --frame-end: calc(100% - var(--safe-frame-inset));
+  inset: 0;
+  border: 1px solid color-mix(in srgb, var(--safe-edge) 62%, var(--safe-face));
+  border-radius: inherit;
+  background: linear-gradient(145deg, var(--safe-highlight), var(--safe-face) 52%, var(--safe-edge));
+  box-shadow: inset 1px 2px 2px #fff8, inset -1px -1px 2px #26333248;
+  clip-path: polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0,
+    var(--safe-frame-inset) var(--safe-frame-inset), var(--frame-end) var(--safe-frame-inset),
+    var(--frame-end) var(--frame-end), var(--safe-frame-inset) var(--frame-end),
+    var(--safe-frame-inset) var(--safe-frame-inset), 0 0);
+}
+.solid-safe .safe-frame::after {
+  inset: var(--safe-frame-inset);
+  border: 1px solid color-mix(in srgb, var(--safe-edge) 63%, #171c22);
+  box-shadow: 0 0 0 1px #fff2;
+}
+.solid-safe .safe-door {
+  inset: var(--safe-door-inset);
+  border-radius: 2px;
+  transform-origin: calc(100% + 1px) center;
+  transform: translateZ(-.5px) rotateY(0deg);
+}
+.solid-safe.safe-opening .safe-door { transform: translateZ(-.5px) rotateY(126deg); }
+.solid-safe .safe-front {
+  border-color: color-mix(in srgb, var(--safe-edge) 38%, var(--safe-face));
+  box-shadow: inset 0 2px #fff5, inset -1px -2px #352d3a21;
+}
+.solid-safe .safe-front::before { content: none; }
+.solid-safe .safe-door-back {
+  border-width: 1px;
+  border-radius: inherit;
+  transform: translateZ(calc(-1 * var(--safe-door-thickness))) rotateY(180deg);
+}
+.solid-safe .safe-door-edge {
+  position: absolute;
+  display: block;
+  border: 1px solid color-mix(in srgb, var(--safe-edge) 84%, #36373c);
+  background: linear-gradient(var(--safe-face), var(--safe-edge));
+  backface-visibility: hidden;
+}
+.solid-safe :is(.safe-door-edge--left, .safe-door-edge--right) {
+  top: 0;
+  bottom: 0;
+  width: var(--safe-door-thickness);
+}
+.solid-safe :is(.safe-door-edge--top, .safe-door-edge--bottom) {
+  left: 0;
+  right: 0;
+  height: var(--safe-door-thickness);
+}
+.solid-safe .safe-door-edge--left { right: 100%; transform-origin: right center; transform: rotateY(-90deg); }
+.solid-safe .safe-door-edge--right { left: 100%; transform-origin: left center; transform: rotateY(90deg); }
+.solid-safe .safe-door-edge--top { bottom: 100%; transform-origin: center bottom; transform: rotateX(90deg); }
+.solid-safe .safe-door-edge--bottom { top: 100%; transform-origin: center top; transform: rotateX(-90deg); }
+.solid-safe .safe-placement-plane {
+  position: absolute;
+  inset: calc(-1 * var(--safe-door-inset));
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
 .post.solid-safe.is-editing { transform: none; }
 
-/* The recess, shelf, and door rotate within the same cabinet volume. */
+/* The recessed walls and shelf stay fixed to the cabinet. */
 .solid-safe .safe-cavity {
+  inset: var(--safe-frame-inset);
   overflow: visible;
+  border: 0;
+  border-radius: 0;
   background: transparent;
+  box-shadow: none;
   transform-style: preserve-3d;
   backface-visibility: hidden;
 }
 .solid-safe .safe-interior { transform-style: preserve-3d; }
+.solid-safe .safe-cavity::before,
 .solid-safe .safe-interior::before,
 .solid-safe .safe-interior::after {
   content: "";
@@ -1092,19 +1164,19 @@ body:has(.post.is-editing) .diary-pages { display:none; }
 }
 .solid-safe .safe-interior::before {
   inset: 0;
-  transform: translateZ(calc(-.93 * var(--solid-depth)));
+  transform: translateZ(calc(-1 * var(--safe-cavity-depth)));
   background: radial-gradient(ellipse at 55% 55%, #575463, #31303d 78%);
 }
 .solid-safe .safe-interior::after {
   inset: 0 100% 0 auto;
-  width: var(--solid-depth);
+  width: var(--safe-cavity-depth);
   transform-origin: right center;
   transform: rotateY(-90deg);
   background: linear-gradient(90deg, #393640, #5e5867);
 }
 .solid-safe .safe-inner-wall {
   inset: 0 auto 0 100%;
-  width: var(--solid-depth);
+  width: var(--safe-cavity-depth);
   clip-path: none;
   transform-origin: left center;
   transform: rotateY(90deg);
@@ -1112,11 +1184,18 @@ body:has(.post.is-editing) .diary-pages { display:none; }
 }
 .solid-safe .safe-inner-floor {
   inset: 100% 0 auto;
-  height: var(--solid-depth);
+  height: var(--safe-cavity-depth);
   clip-path: none;
   transform-origin: center top;
   transform: rotateX(-90deg);
   background: linear-gradient(#8d8493, #4b4754);
+}
+.solid-safe .safe-cavity::before {
+  inset: auto 0 100%;
+  height: var(--safe-cavity-depth);
+  transform-origin: center bottom;
+  transform: rotateX(90deg);
+  background: linear-gradient(#34313e, #55515d);
 }
 .solid-safe .safe-book {
   transform: translateZ(calc(-.47 * var(--solid-depth))) rotate(-9deg) scale(.92);
@@ -1431,6 +1510,114 @@ body:has(.post.is-editing) .diary-pages { display:none; }
   .diary-cover-hinge, .diary-left-leaf, .solid-diary .binder-holes i::before,
   .solid-diary .binder-holes i::after, .binder-clip-button span,
   .solid-diary .binder-snap-button { transition: none; }
+}
+
+/* Extruded steel register plate and cylindrical grip, mounted to the inset door. */
+.solid-safe .safe-lock {
+  --lock-depth: clamp(5px, 1.92vw, 12px);
+  --dial-depth: clamp(5px, 1.7vw, 10px);
+  left: 16%; top: 49%; width: 38%; height: 12%;
+  display: block; padding: 0; border: 0; border-radius: 0;
+  background: none; box-shadow: none; transform-style: preserve-3d; pointer-events: none;
+  backface-visibility: hidden;
+}
+.safe-lock-side, .safe-lock-face {
+  position: absolute; display: block; backface-visibility: hidden;
+}
+.safe-lock-side.side-left, .safe-lock-side.side-right {
+  inset-block: 5% 5%; width: var(--lock-depth);
+  background: linear-gradient(90deg, #65717b, #afbac0 24%, #d7dfe3 70%, #8b979f);
+}
+.safe-lock-side.side-left {
+  left: 0; transform-origin: left center; transform: rotateY(-90deg);
+}
+.safe-lock-side.side-right {
+  right: 0; transform-origin: right center; transform: rotateY(90deg);
+}
+.safe-lock-side.side-top, .safe-lock-side.side-bottom {
+  inset-inline: 2% 2%; height: var(--lock-depth);
+}
+.safe-lock-side.side-top {
+  top: 0; transform-origin: center top; transform: rotateX(90deg);
+  background: linear-gradient(#778591 0%, #c4cfd6 22%, #f4f7f8 68%, #aebcc3);
+}
+.safe-lock-side.side-bottom {
+  bottom: 0; transform-origin: center bottom; transform: rotateX(-90deg);
+  background: linear-gradient(#a4afb9, #72828d 45%, #52616d 91%);
+}
+.safe-lock-side.side-back {
+  inset: 0; border-radius: 6px; background: #7c8993;
+  transform: rotateY(180deg);
+}
+.safe-lock-face {
+  inset: 0; transform: translateZ(var(--lock-depth)); border: 1px solid #919fa9;
+  border-radius: 5px;
+  background:
+    repeating-linear-gradient(0deg, #fff3 0 .6px, transparent .6px 1.9px),
+    linear-gradient(143deg, #f7fafb 2%, #d6dfe4 33%, #c5cfd5 59%, #e8eff2 86%, #aab7c0);
+  box-shadow: inset 0 1px #fff, inset 0 -1px #73848e77, 0 2px 3px #30364944;
+}
+.safe-lock-face::before,
+.safe-lock-face::after {
+  content: ""; position: absolute; top: 50%; transform: translateY(-50%);
+  width: clamp(2.4px, .9vw, 5px); aspect-ratio: 1;
+  border: .5px solid #72818c; border-radius: 50%;
+  background: linear-gradient(-38deg, #bbc9d1 30%, #6c7c89 47% 53%, #f7fbfd 67%);
+}
+.safe-lock-face::before { left: 3.3%; }
+.safe-lock-face::after { right: 4%; }
+.solid-safe.safe-placement-blocked .safe-lock-face { border-color: #b86366; }
+
+.solid-safe .safe-lock .safe-dial {
+  position: absolute; inset: 50% auto auto 10%;
+  width: auto; height: 90%; max-width: 36%; aspect-ratio: 1;
+  border: 0; background: none; box-shadow: none;
+  transform: translateY(-50%) translateZ(var(--lock-depth));
+  transform-style: preserve-3d;
+}
+.safe-dial-segment {
+  position: absolute; inset: 0;
+  transform: rotateZ(calc(var(--slice, 0) * 22.5deg));
+  transform-style: preserve-3d;
+}
+.safe-dial-segment::before {
+  content: ""; position: absolute; top: .96%; left: 40%;
+  width: 20%; height: var(--dial-depth);
+  transform-origin: center top; transform: rotateX(90deg);
+  backface-visibility: hidden;
+  background: repeating-linear-gradient(90deg, #e7edf0 0 .5px, #a0abb3 .5px 1px, #84939f 1px 1.8px);
+  box-shadow: inset 0 1px #70828f, inset 0 -1px #f8feffb8;
+}
+.safe-dial-cap {
+  position: absolute; inset: 0; border-radius: 50%; border: 1px solid #80919b;
+  transform: translateZ(var(--dial-depth)); transform-style: preserve-3d;
+  backface-visibility: hidden;
+  background:
+    radial-gradient(circle at 40% 37%, transparent 55%, #f2f7fa 69%, #8b99a1 78%, #5f707d 89%),
+    conic-gradient(from -41deg, #e2ebee, #a9b9c2 22%, #ebf4f6 40%, #798b98 59%, #bccad1 76%, #f8fdff 90%, #e2ebee);
+  box-shadow: inset 0 0 0 1px #fcffff9a, 0 1px 2px #283a4d66;
+}
+.safe-dial-cap::after {
+  content: ""; position: absolute; inset: 16% 36%;
+  border: 1px solid #778a97; border-radius: 42% / 26%;
+  transform: translateZ(2px);
+  background: linear-gradient(92deg, #6f828d 0%, #c3d0d6 24%, #f4fafc 40%, #abbac2 65%, #657681);
+  box-shadow: 1px 1px 2px #27374287, inset 0 1px #fff;
+}
+.solid-safe .safe-lock .safe-wheels {
+  position: absolute; inset: 23% 13% 23% 50%;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch;
+  gap: 1px; padding: 1px; border: 1px solid #82929c; border-radius: 2px;
+  transform: translateZ(calc(var(--lock-depth) + .35px));
+  backface-visibility: hidden;
+  background: linear-gradient(#81919c, #e0e8ed);
+  box-shadow: 0 1px #fff, inset 0 1px 1px #46586490;
+}
+.solid-safe .safe-lock .safe-wheels b {
+  display: grid; place-items: center; min-width: 0; padding: 0; border-radius: 1px;
+  color: #f7fafb; font: 700 clamp(5.5px, 1.72vw, 11px)/1 monospace;
+  background: linear-gradient(#18232d, #344855 32%, #22323d 65%, #101b22);
+  box-shadow: inset 0 1px #97aebc64, inset -1px 0 #08141b80;
 }
 
 
@@ -2299,6 +2486,8 @@ window.addEventListener('pageshow', event => {
   if (event.persisted) applySafeColor(readSafeColor());
 });
 
+const safeDoor = home ? document.createElement('div') : null;
+const safeLock = home ? document.createElement('div') : null;
 if (home) {
   elements.post.classList.add('home-cover', 'safe-home');
   document.getElementById('post-view').setAttribute('aria-label', '내 금고');
@@ -2313,17 +2502,36 @@ if (home) {
   interior.className = 'safe-interior';
   interior.innerHTML = '<span class="safe-inner-wall"></span><span class="safe-inner-floor"></span>';
   cavity.append(interior, book);
-  const door = document.createElement('div');
-  door.className = 'safe-door';
+  const frame = document.createElement('div');
+  frame.className = 'safe-frame';
+  frame.setAttribute('aria-hidden', 'true');
+  safeDoor.className = 'safe-door';
   const front = document.createElement('div');
   front.className = 'safe-front';
   front.setAttribute('aria-hidden', 'true');
-  front.innerHTML = '<span class="safe-lock"><span class="safe-dial"></span><span class="safe-wheels"><b>0</b><b>0</b><b>0</b></span></span>';
-  const doorBack = document.createElement('div');
-  doorBack.className = 'safe-door-back';
-  doorBack.setAttribute('aria-hidden', 'true');
-  door.append(front, doorBack, elements.layers);
-  elements.post.prepend(cavity, door);
+  const back = document.createElement('div');
+  back.className = 'safe-door-back';
+  back.setAttribute('aria-hidden', 'true');
+  const edges = ['left', 'right', 'top', 'bottom'].map(side => {
+    const edge = document.createElement('i');
+    edge.className = `safe-door-edge safe-door-edge--${side}`;
+    edge.setAttribute('aria-hidden', 'true');
+    return edge;
+  });
+  const placementPlane = document.createElement('div');
+  placementPlane.className = 'safe-placement-plane';
+  safeLock.className = 'safe-lock';
+  safeLock.setAttribute('aria-hidden', 'true');
+  const lockSides = ['left', 'right', 'top', 'bottom', 'back']
+    .map(side => `<i class="safe-lock-side side-${side}"></i>`).join('');
+  const dialSides = Array.from({ length: 16 }, (_, index) =>
+    `<i class="safe-dial-segment" style="--slice:${index}"></i>`).join('');
+  safeLock.innerHTML = `${lockSides}<span class="safe-lock-face"></span>
+    <span class="safe-dial">${dialSides}<span class="safe-dial-cap"></span></span>
+    <span class="safe-wheels"><b>0</b><b>0</b><b>0</b></span>`;
+  placementPlane.append(safeLock, elements.layers);
+  safeDoor.append(front, back, ...edges, placementPlane);
+  elements.post.prepend(cavity, frame, safeDoor);
   const colors = document.getElementById('safe-colors');
   colors.hidden = false;
   for (const [id, name] of safeColors) {
@@ -2796,14 +3004,24 @@ function fitsSafeDoor(item) {
   const angle = (item.rotation ?? 0) * Math.PI / 180;
   const cos = Math.cos(angle) * item.size;
   const sin = Math.sin(angle) * item.size;
-  const radius = 800 / (elements.post.clientWidth || 300);
+  const boardWidth = elements.post.clientWidth || 300;
+  const boardHeight = elements.post.clientHeight || boardWidth;
+  const doorLeft = safeDoor.offsetLeft / boardWidth * 100;
+  const doorTop = safeDoor.offsetTop / boardHeight * 100;
+  const doorRight = doorLeft + safeDoor.offsetWidth / boardWidth * 100;
+  const doorBottom = doorTop + safeDoor.offsetHeight / boardHeight * 100;
+  const lockLeft = safeLock.offsetLeft / boardWidth * 100;
+  const lockTop = safeLock.offsetTop / boardHeight * 100;
+  const lockRight = lockLeft + safeLock.offsetWidth / boardWidth * 100;
+  const lockBottom = lockTop + safeLock.offsetHeight / boardHeight * 100;
+  const radius = Math.min(800 / boardWidth, (lockBottom - lockTop) / 2);
   for (let i = 0; i < footprint.length; i += 2) {
     const x = item.x + footprint[i] * cos - footprint[i + 1] * sin;
     const y = item.y + footprint[i] * sin + footprint[i + 1] * cos;
-    if (x < 7.5 || x > 92.5 || y < 7 || y > 93) return false;
-    if (x < 16 || x > 54 || y < 49 || y > 61) continue;
-    const dx = Math.max(16 + radius - x, x - (54 - radius), 0);
-    const dy = Math.max(49 + radius - y, y - (61 - radius), 0);
+    if (x < doorLeft || x > doorRight || y < doorTop || y > doorBottom) return false;
+    if (x < lockLeft || x > lockRight || y < lockTop || y > lockBottom) continue;
+    const dx = Math.max(lockLeft + radius - x, x - (lockRight - radius), 0);
+    const dy = Math.max(lockTop + radius - y, y - (lockBottom - radius), 0);
     if (dx * dx + dy * dy <= radius * radius) return false;
   }
   return true;
