@@ -712,6 +712,9 @@ body:has(.post.is-editing) .diary-pages { display:none; }
 }
 #capture-plan::backdrop { background: #25394c66; }
 #capture-plan h2 { margin: 0; font-size: 1.1rem; }
+#capture-sticker { display: grid; gap: 10px; }
+#capture-sticker label { display: grid; gap: 4px; }
+#capture-frame { width: 100%; max-height: 34vh; object-fit: fill; touch-action: none; cursor: crosshair; }
 #capture-plan p { font-size: .88rem; line-height: 1.5; }
 .diary figure::before { content: none; }
 .diary .photo-tape {
@@ -1795,8 +1798,15 @@ body:has(.post.is-editing) .diary-pages { display:none; }
     <p id="notice" class="notice" role="status" hidden></p>
   </main>
   <dialog id="capture-plan" aria-labelledby="capture-plan-title">
-    <h2 id="capture-plan-title">사진으로 굿즈 모으기</h2>
-    <p>굿즈를 촬영해 SAM 3D로 에셋을 만드는 기능을 준비 중이에요.</p>
+    <h2 id="capture-plan-title">볼록 스티커 만들기</h2>
+    <p>굿즈가 잘 보이는 정면 사진 한 장을 찍어 주세요.</p>
+    <form id="capture-sticker">
+      <label>스티커 이름 <input name="name" required maxlength="32"></label>
+      <label>사진 촬영 또는 선택 <input name="photo" type="file" accept="image/*" capture="environment" required></label>
+      <canvas id="capture-frame" hidden aria-label="사진에서 굿즈를 감싸도록 드래그"></canvas>
+      <p id="capture-status" role="status"></p>
+      <button class="button primary" type="submit" disabled>만들어 저장</button>
+    </form>
     <form method="dialog"><button class="button">닫기</button></form>
   </dialog>
   <dialog id="gyro-setup" aria-labelledby="gyro-setup-title">
@@ -3992,6 +4002,167 @@ function addItem(asset) {
   renderPicker();
 }
 
+function stickerLibrary(mode = 'readonly', asset) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('goodmorning-sticker-library', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('stickers', { keyPath: 'id' });
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction('stickers', mode);
+      const store = transaction.objectStore('stickers');
+      const operation = asset ? store.add(asset) : store.getAll();
+      transaction.oncomplete = () => { db.close(); resolve(operation.result); };
+      transaction.onabort = () => { db.close(); reject(transaction.error); };
+    };
+  });
+}
+
+function addSavedSticker(grid, asset, onClick) {
+  const tile = document.createElement('button');
+  tile.type = 'button';
+  tile.className = 'button asset-choice';
+  tile.dataset.asset = asset.id;
+  const image = new Image();
+  image.alt = '';
+  const url = URL.createObjectURL(asset.preview);
+  const release = () => URL.revokeObjectURL(url);
+  image.onload = image.onerror = release;
+  image.src = url;
+  const label = document.createElement('span');
+  label.textContent = asset.name;
+  tile.append(image, label);
+  tile.addEventListener('click', onClick);
+  grid.append(tile);
+}
+
+function wireStickerCapture(onSaved) {
+  const dialog = document.getElementById('capture-plan');
+  const form = document.getElementById('capture-sticker');
+  const photoInput = form.elements.photo;
+  const button = form.querySelector('[type=submit]');
+  const status = document.getElementById('capture-status');
+  const canvas = document.getElementById('capture-frame');
+  const context = canvas.getContext('2d');
+  const firstFrame = document.createElement('canvas');
+  const endpoint = document.querySelector('meta[name="sticker-generation-api"]')?.content ||
+    (['localhost', '127.0.0.1'].includes(location.hostname) ? '/api/photo-stickers' : '');
+  let box, start, pending, selection = 0;
+  const draw = () => {
+    context.drawImage(firstFrame, 0, 0);
+    if (!box) return;
+    const [x1, y1, x2, y2] = box;
+    context.strokeStyle = '#63e5ba';
+    context.lineWidth = 3;
+    context.strokeRect(x1 * canvas.width, y1 * canvas.height, (x2 - x1) * canvas.width, (y2 - y1) * canvas.height);
+  };
+  const point = event => {
+    const rect = canvas.getBoundingClientRect();
+    return [clamp((event.clientX - rect.left) / rect.width, 0, 1), clamp((event.clientY - rect.top) / rect.height, 0, 1)];
+  };
+  document.getElementById('add-asset').addEventListener('click', () => dialog.showModal());
+  photoInput.addEventListener('change', async () => {
+    const request = ++selection;
+    const file = photoInput.files[0];
+    canvas.hidden = button.disabled = true;
+    start = box = null;
+    if (!file) return;
+    const photo = new Image();
+    const url = URL.createObjectURL(file);
+    status.textContent = '사진을 불러오는 중…';
+    photo.src = url;
+    try {
+      await photo.decode();
+      if (request === selection) {
+        const scale = Math.min(1, 960 / Math.max(photo.naturalWidth, photo.naturalHeight));
+        canvas.width = firstFrame.width = Math.max(1, Math.round(photo.naturalWidth * scale));
+        canvas.height = firstFrame.height = Math.max(1, Math.round(photo.naturalHeight * scale));
+        firstFrame.getContext('2d').drawImage(photo, 0, 0, canvas.width, canvas.height);
+        draw();
+        canvas.hidden = false;
+        status.textContent = '굿즈를 감싸도록 사각형을 드래그해 주세요.';
+      }
+    } catch {
+      if (request === selection) status.textContent = '사진을 열 수 없어요. 다른 사진으로 시도해 주세요.';
+    } finally { URL.revokeObjectURL(url); }
+  });
+  canvas.addEventListener('pointerdown', event => {
+    if (pending || !event.isPrimary) return;
+    start = point(event);
+    box = null;
+    button.disabled = true;
+    canvas.setPointerCapture(event.pointerId);
+    draw();
+  });
+  const mark = event => {
+    if (!start || !event.isPrimary) return;
+    const [x, y] = point(event);
+    box = [Math.min(x, start[0]), Math.min(y, start[1]), Math.max(x, start[0]), Math.max(y, start[1])];
+    draw();
+  };
+  canvas.addEventListener('pointermove', mark);
+  canvas.addEventListener('pointerup', event => {
+    if (!event.isPrimary) return;
+    mark(event);
+    start = null;
+    button.disabled = !box || box[2] - box[0] < .025 || box[3] - box[1] < .025;
+  });
+  canvas.addEventListener('pointercancel', () => { start = null; });
+  dialog.addEventListener('close', () => pending?.abort());
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (pending || button.disabled) return;
+    if (!endpoint) { status.textContent = '스티커 생성 서버가 아직 연결되지 않았어요.'; return; }
+    const name = form.elements.name.value.trim();
+    if (!name) { form.elements.name.focus(); return; }
+    const body = new FormData(form);
+    body.set('box', JSON.stringify(box));
+    pending = new AbortController();
+    photoInput.disabled = button.disabled = true;
+    status.textContent = '굿즈를 분리하고 스티커를 만드는 중…';
+    try {
+      const photo = await new Promise(resolve => firstFrame.toBlob(resolve, 'image/jpeg', .93));
+      if (!photo) throw new Error('사진을 전송용으로 준비하지 못했어요.');
+      body.set('photo', photo, 'photo.jpg');
+      const response = await fetch(endpoint, { method: 'POST', body, signal: pending.signal });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(typeof error.detail === 'string' ? error.detail : '스티커를 만들지 못했어요.');
+      }
+      const data = await response.blob();
+      const header = new DataView(await data.slice(0, 12).arrayBuffer());
+      if (header.byteLength !== 12 || header.getUint32(0, true) !== 0x46546c67 ||
+          header.getUint32(4, true) !== 2 || header.getUint32(8, true) !== data.size) {
+        throw new Error('서버에서 올바른 스티커 파일을 받지 못했어요.');
+      }
+      const [x1, y1, x2, y2] = box;
+      const preview = document.createElement('canvas');
+      const w = (x2 - x1) * firstFrame.width, h = (y2 - y1) * firstFrame.height;
+      preview.width = Math.max(1, Math.round(w * 240 / Math.max(w, h)));
+      preview.height = Math.max(1, Math.round(h * 240 / Math.max(w, h)));
+      preview.getContext('2d').drawImage(firstFrame, x1 * firstFrame.width, y1 * firstFrame.height,
+        w, h, 0, 0, preview.width, preview.height);
+      const cover = await new Promise(resolve => preview.toBlob(resolve, 'image/jpeg', .85));
+      pending.signal.throwIfAborted();
+      if (!cover) throw new Error('스티커 미리보기를 저장하지 못했어요.');
+      const asset = { id: crypto.randomUUID(), name, finish: 'sticker', preview: cover,
+        file: new File([data], 'sticker.glb', { type: 'model/gltf-binary' }) };
+      await stickerLibrary('readwrite', asset);
+      onSaved(asset);
+      form.reset();
+      canvas.hidden = true;
+      box = null;
+      status.textContent = '에셋함에 저장했어요.';
+    } catch (error) {
+      if (!pending.signal.aborted) status.textContent = error.message || '스티커를 저장하지 못했어요.';
+    } finally {
+      pending = null;
+      photoInput.disabled = false;
+      button.disabled = !box;
+    }
+  });
+}
+
 const groups = mountedBoard ? [['볼록 스티커 추가', stickerAssets], ['3D 자석 추가', displayAssets]] : [['3D 모델 추가', assets]];
 for (const [name, options] of groups) {
   const group = document.createElement('section');
@@ -4021,6 +4192,10 @@ for (const [name, options] of groups) {
   }
   group.append(heading, buttons);
   elements['asset-list'].append(group);
+  if (options === stickerAssets) stickerLibrary().then(items => {
+    for (const item of items) addSavedSticker(buttons, item, () => addItem(item));
+    if (draft) renderPicker();
+  }).catch(() => {});
 }
 
 elements.file.addEventListener('change', () => {
@@ -4221,7 +4396,7 @@ function wireAssetPreview() {
     pitchSlider.value = 0;
     status.textContent = '3D 모델 불러오는 중…';
     document.getElementById('preview-title').textContent = `${asset.name} · ${asset.finish === 'sticker' ? '볼록 스티커' : '3D 자석'}`;
-    document.getElementById('preview-diary').href = `?magnets&story=${storyId}&open`;
+    document.getElementById('preview-diary').href = storyId ? `?magnets&story=${storyId}&open` : '?magnets&open';
     dialog.showModal();
     model = window.mountGoodmorningModel(canvas, asset, state => {
       if (token !== revision || !dialog.open) return;
@@ -4252,8 +4427,13 @@ if (!showPost) {
   }
   if (section === 'assets') {
     const collection = document.getElementById('collection');
-    document.getElementById('add-asset').addEventListener('click', () => document.getElementById('capture-plan').showModal());
     const openPreview = wireAssetPreview();
+    const savedGrid = document.createElement('div');
+    savedGrid.className = 'collection-grid';
+    const showSaved = item => addSavedSticker(savedGrid, item, () => openPreview(item, null, ''));
+    collection.append(savedGrid);
+    stickerLibrary().then(items => items.forEach(showSaved)).catch(() => {});
+    wireStickerCapture(showSaved);
     for (const [title, items] of [['볼록 스티커', stickerAssets], ['3D 자석', displayAssets]]) {
       const heading = document.createElement('h2');
       heading.textContent = title;
